@@ -149,6 +149,14 @@
       (원본+변환) 1000장 생성 & ZIP 다운로드
     </button>
 
+    <button
+      class="action secondary"
+      :disabled="originalsCount < 1"
+      @click="generateExplainSamples"
+    >
+      증강 방식별 설명 샘플 생성
+    </button>
+
     <button class="action danger" @click="resetDigitData">
       현재 숫자 데이터 초기화
     </button>
@@ -166,7 +174,8 @@
       - 화면에는 크게 보이지만 내부 해상도는 300×150 (10×5칸, 한 칸 30×30)<br>
       - 각 칸에 같은 숫자를 손으로 50번 쓰고, <b>“50칸 → 28×28 원본 50장 저장”</b> 버튼을 누르면
         <code>img_숫자_001.jpg ~ img_숫자_050.jpg</code>가 생성됩니다.<br>
-      - 그 다음 <b>“1000장 생성 & ZIP 다운로드”</b> 버튼을 누르면 원본 포함 1000장(증강 이미지 포함)을 ZIP으로 내려받습니다.
+      - 그 다음 <b>“1000장 생성 & ZIP 다운로드”</b> 버튼을 누르면 원본 포함 1000장(증강 이미지 포함)을 ZIP으로 내려받습니다.<br>
+      - <b>“증강 방식별 설명 샘플 생성”</b> 버튼을 누르면 회전/이동/크기/노이즈별로 5개씩 예시가 생성됩니다.
     </div>
   </div>
 
@@ -178,7 +187,7 @@
   </div>
 
   <div class="sample-block" v-if="augmentedSamples.length">
-    <h3>변환된 이미지 샘플 (최대 10개)</h3>
+    <h3>랜덤 조합 증강 샘플 (데이터셋용, 최대 10개)</h3>
     <div class="samples">
       <div v-for="(s, idx) in augmentedSamples" :key="idx" style="text-align:center;">
         <img :src="s.url" />
@@ -191,10 +200,29 @@
       </div>
     </div>
   </div>
+
+  <div class="sample-block" v-if="hasExplainSamples">
+    <h3>증강 방식별 설명용 샘플 (각 5개)</h3>
+
+    <div v-for="(items, type) in explainSamples" :key="type" v-if="items.length">
+      <h4 style="margin:4px 0 2px;">{{ typeLabel(type) }}</h4>
+      <div class="samples">
+        <div v-for="(s, idx) in items" :key="idx" style="text-align:center;">
+          <img :src="s.url" />
+          <div style="font-size:11px; margin-top:4px; color:#444;">
+            Rotate: {{ s.info.rotate }}<br>
+            Shift: {{ s.info.shift }}<br>
+            Scale: {{ s.info.scale }}<br>
+            Noise: {{ s.info.noise }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
-  const { createApp, ref, onMounted } = Vue;
+  const { createApp, ref, computed, onMounted } = Vue;
 
   // 숫자별로 28x28 원본 캔버스를 저장
   const digitStore = {};
@@ -204,8 +232,11 @@
     };
   }
 
-  // 28x28 이미지를 랜덤 변환(회전, 이동, 스케일, 노이즈) + 설명정보 반환
-  function augment28x28(baseCanvas) {
+  /**
+   * 28x28 이미지에 증강을 적용하는 공통 함수
+   * preset이 없으면 랜덤 증강, 있으면 지정된 파라미터로 증강
+   */
+  function applyAugmentation(baseCanvas, preset = null) {
     const w = 28, h = 28;
     const aug = document.createElement('canvas');
     aug.width = w;
@@ -216,38 +247,50 @@
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
 
-    // ---- 증강 파라미터 생성 ----
-    const angleDeg = (Math.random() - 0.5) * 40;   // -20° ~ +20°
+    // --- 파라미터 설정 ---
+    const angleDeg = preset && typeof preset.angleDeg === 'number'
+      ? preset.angleDeg
+      : (Math.random() - 0.5) * 40;   // -20° ~ +20°
     const angle = angleDeg * (Math.PI / 180);
 
-    const scale = 0.9 + Math.random() * 0.2;       // 0.9 ~ 1.1
-    const dx = (Math.random() - 0.5) * 6;          // -3 ~ 3px
-    const dy = (Math.random() - 0.5) * 6;          // -3 ~ 3px
-    const useNoise = Math.random() < 0.7;          // 70% 확률로 노이즈 추가
+    const scale = preset && typeof preset.scale === 'number'
+      ? preset.scale
+      : 0.9 + Math.random() * 0.2;    // 0.9 ~ 1.1
 
+    const dx = preset && typeof preset.dx === 'number'
+      ? preset.dx
+      : (Math.random() - 0.5) * 6;    // -3 ~ 3px
+
+    const dy = preset && typeof preset.dy === 'number'
+      ? preset.dy
+      : (Math.random() - 0.5) * 6;    // -3 ~ 3px
+
+    const useNoise = preset && typeof preset.useNoise === 'boolean'
+      ? preset.useNoise
+      : Math.random() < 0.7;          // 기본: 70% 확률로 노이즈
+
+    // --- 기하 변환 ---
     ctx.save();
     ctx.translate(w / 2, h / 2);
     ctx.rotate(angle);
     ctx.scale(scale, scale);
     ctx.translate(dx, dy);
-
     ctx.drawImage(baseCanvas, -w / 2, -h / 2, w, h);
     ctx.restore();
 
-    // ---- 노이즈 ----
+    // --- 노이즈 ---
     if (useNoise) {
       const imgData = ctx.getImageData(0, 0, w, h);
       const data = imgData.data;
       for (let i = 0; i < data.length; i += 4) {
         const noise = (Math.random() - 0.5) * 30;
-        data[i] = Math.max(0, Math.min(255, data[i] + noise));     // R
+        data[i]   = Math.max(0, Math.min(255, data[i]   + noise)); // R
         data[i+1] = Math.max(0, Math.min(255, data[i+1] + noise)); // G
         data[i+2] = Math.max(0, Math.min(255, data[i+2] + noise)); // B
       }
       ctx.putImageData(imgData, 0, 0);
     }
 
-    // ---- 증강 정보 반환 ----
     return {
       canvas: aug,
       info: {
@@ -259,17 +302,44 @@
     };
   }
 
+  // 데이터셋용 랜덤 증강 (기존 동작)
+  function augment28x28(baseCanvas) {
+    return applyAugmentation(baseCanvas, null);
+  }
+
   createApp({
     setup() {
       const currentDigit = ref(0);
       const originalsCount = ref(0);
-      const originalSamples = ref([]);   // dataURL
+      const originalSamples = ref([]);   // dataURL 배열
       const augmentedSamples = ref([]);  // [{url, info}]
       const isWorking = ref(false);
+
+      // 설명용 샘플: { rotate: [...], shift: [...], scale: [...], noise: [...] }
+      const explainSamples = ref({
+        rotate: [],
+        shift: [],
+        scale: [],
+        noise: []
+      });
+
+      const hasExplainSamples = computed(() =>
+        Object.values(explainSamples.value).some(arr => arr.length > 0)
+      );
 
       let canvas, ctx;
       let drawing = false;
       let lastX = 0, lastY = 0;
+
+      function typeLabel(t) {
+        switch (t) {
+          case 'rotate': return '회전 (Rotation)';
+          case 'shift':  return '이동 (Shift)';
+          case 'scale':  return '크기 조절 (Scale)';
+          case 'noise':  return '노이즈 (Noise)';
+          default: return t;
+        }
+      }
 
       function setDigit(d) {
         currentDigit.value = d;
@@ -278,6 +348,7 @@
           .slice(0, 10)
           .map(c => c.toDataURL("image/jpeg", 0.9));
         augmentedSamples.value = [];
+        explainSamples.value = { rotate: [], shift: [], scale: [], noise: [] };
       }
 
       function initCanvas() {
@@ -362,6 +433,8 @@
         const store = digitStore[currentDigit.value];
         store.originals = [];
         originalSamples.value = [];
+        explainSamples.value = { rotate: [], shift: [], scale: [], noise: [] };
+        augmentedSamples.value = [];
 
         const totalCells = 50; // 10 x 5
         for (let i = 0; i < totalCells; i++) {
@@ -400,9 +473,10 @@
         originalsCount.value = 0;
         originalSamples.value = [];
         augmentedSamples.value = [];
+        explainSamples.value = { rotate: [], shift: [], scale: [], noise: [] };
       }
 
-      // ZIP 생성 및 다운로드
+      // ZIP 생성 및 다운로드 (데이터셋용)
       async function generateAndDownload() {
         const digit = currentDigit.value;
         const store = digitStore[digit];
@@ -431,7 +505,7 @@
           folder.file(filename, base64, { base64: true });
         });
 
-        // 2) 증강 이미지 생성
+        // 2) 증강 이미지 생성 (랜덤 조합)
         const augSamples = [];
         for (let i = 0; i < needAug; i++) {
           const base = originals[Math.floor(Math.random() * originals.length)];
@@ -456,6 +530,93 @@
         alert(`숫자 ${digit}에 대해 원본 + 증강 합계 1000장을 ZIP으로 저장했습니다.`);
       }
 
+      // 설명용: 회전/이동/크기/노이즈별로 5개씩 생성
+      function generateExplainSamples() {
+        const digit = currentDigit.value;
+        const originals = digitStore[digit].originals;
+        if (!originals || originals.length < 1) {
+          alert("먼저 원본 28×28 이미지를 저장해 주세요.");
+          return;
+        }
+
+        const base = originals[0]; // 설명용 기준 이미지 하나 선택
+        const result = {
+          rotate: [],
+          shift: [],
+          scale: [],
+          noise: []
+        };
+
+        // 각 타입별로 5개씩
+        for (let i = 0; i < 5; i++) {
+          // 회전만
+          {
+            const params = {
+              angleDeg: (Math.random() - 0.5) * 40,
+              dx: 0,
+              dy: 0,
+              scale: 1,
+              useNoise: false
+            };
+            const { canvas, info } = applyAugmentation(base, params);
+            result.rotate.push({
+              url: canvas.toDataURL("image/jpeg", 0.9),
+              info
+            });
+          }
+
+          // 이동만
+          {
+            const params = {
+              angleDeg: 0,
+              dx: (Math.random() - 0.5) * 8,
+              dy: (Math.random() - 0.5) * 8,
+              scale: 1,
+              useNoise: false
+            };
+            const { canvas, info } = applyAugmentation(base, params);
+            result.shift.push({
+              url: canvas.toDataURL("image/jpeg", 0.9),
+              info
+            });
+          }
+
+          // 크기 조절만
+          {
+            const params = {
+              angleDeg: 0,
+              dx: 0,
+              dy: 0,
+              scale: 0.8 + Math.random() * 0.4, // 0.8 ~ 1.2
+              useNoise: false
+            };
+            const { canvas, info } = applyAugmentation(base, params);
+            result.scale.push({
+              url: canvas.toDataURL("image/jpeg", 0.9),
+              info
+            });
+          }
+
+          // 노이즈만
+          {
+            const params = {
+              angleDeg: 0,
+              dx: 0,
+              dy: 0,
+              scale: 1,
+              useNoise: true
+            };
+            const { canvas, info } = applyAugmentation(base, params);
+            result.noise.push({
+              url: canvas.toDataURL("image/jpeg", 0.9),
+              info
+            });
+          }
+        }
+
+        explainSamples.value = result;
+      }
+
       onMounted(() => {
         canvas = document.getElementById("drawCanvas");
         ctx = canvas.getContext("2d");
@@ -468,12 +629,16 @@
         originalsCount,
         originalSamples,
         augmentedSamples,
+        explainSamples,
+        hasExplainSamples,
         isWorking,
         setDigit,
         clearCanvas,
         sliceTo28x28,
         generateAndDownload,
-        resetDigitData
+        generateExplainSamples,
+        resetDigitData,
+        typeLabel
       };
     }
   }).mount("#app");
