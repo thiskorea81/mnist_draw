@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>MNIST 손글씨 수집 도구</title>
+  <title>MNIST 손글씨 수집 도구 (반응형)</title>
 
   <!-- Vue 3 CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -18,7 +18,7 @@
       background: #f5f5f5;
     }
     #app {
-      max-width: 1200px;
+      max-width: 1000px;
       margin: 0 auto;
       background: #fff;
       padding: 16px 20px 24px;
@@ -77,18 +77,21 @@
       margin-top: 12px;
       display: flex;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: stretch;
       gap: 8px;
     }
     canvas {
       border: 1px solid #ddd;
       background: #fff;
-      /* 내부는 300x150이지만 크게 보이게 확대 */
-      width: 1200px;
-      height: 600px;
+      /* 내부 해상도는 고정(600x300), 화면에 보이는 크기는 반응형 */
+      width: 100%;
+      max-width: 900px;
+      height: auto;
+      aspect-ratio: 2 / 1;
       image-rendering: pixelated;
       border-radius: 8px;
-      
+
+      /* 태블릿에서 스크롤/줌 제스처를 막고 그리기 인식 */
       touch-action: none;
     }
     .hint {
@@ -121,7 +124,7 @@
 </head>
 <body>
 <div id="app">
-  <h1>MNIST 스타일 손글씨 수집 (Vue + Canvas)</h1>
+  <h1>MNIST 스타일 손글씨 수집 (반응형 Canvas)</h1>
 
   <div class="toolbar">
     <div><strong>현재 숫자:</strong></div>
@@ -163,13 +166,13 @@
   </div>
 
   <div class="canvas-wrapper">
-    <canvas id="drawCanvas" width="300" height="150"></canvas>
+    <canvas id="drawCanvas"></canvas>
     <div class="hint">
-      - 화면에는 크게 보이지만 내부 해상도는 300×150 (10×5칸, 한 칸 30×30)<br>
-      - 각 칸에 같은 숫자를 손으로 50번 쓰고, <b>“50칸 → 28×28 원본 50장 저장”</b> 버튼을 누르면
-        <code>img_숫자_001.jpg ~ img_숫자_050.jpg</code>의 원본 데이터가 메모리에 저장됩니다.<br>
-      - 이때 각 28×28 이미지의 **가장자리 1픽셀 테두리는 흰색으로 처리**해서 그리드 선이 제거됩니다.<br>
-      - <b>“1000장 생성 & ZIP 다운로드”</b> 버튼을 누르면 원본 포함 1000장(증강 이미지 포함)을 ZIP으로 내려받고,<br>
+      - 내부 해상도는 600×300이며, 10×5칸(총 50칸)으로 나뉩니다.<br>
+      - 화면에서는 기기 가로폭에 맞춰 자동으로 확대/축소됩니다(칸 크기 자동 조절).<br>
+      - 각 칸에 같은 숫자를 50번 쓰고, <b>“50칸 → 28×28 원본 50장 저장”</b> 버튼을 누르면<br>
+        28×28 이미지가 50장 메모리에 저장됩니다(가장자리 1픽셀 테두리는 흰색으로 처리).<br>
+      - <b>“1000장 생성 & ZIP 다운로드”</b> 버튼을 누르면 원본 + 증강 합계 1000장을 ZIP으로 받고,<br>
         아래에 <b>기하 변환 5개 + 노이즈 중심 5개</b> 샘플이 표시됩니다.
     </div>
   </div>
@@ -219,18 +222,15 @@
 <script>
   const { createApp, ref, computed, onMounted } = Vue;
 
-  // 숫자별로 28x28 원본 캔버스를 저장
+  const COLS = 10;
+  const ROWS = 5;
+
+  // 숫자별 28x28 원본 저장소
   const digitStore = {};
   for (let d = 0; d <= 9; d++) {
-    digitStore[d] = {
-      originals: []  // 28x28 offscreen canvas 배열
-    };
+    digitStore[d] = { originals: [] };
   }
 
-  /**
-   * 28x28 이미지에 증강을 적용하는 공통 함수
-   * preset이 없으면 랜덤 증강, 있으면 지정된 파라미터로 증강
-   */
   function applyAugmentation(baseCanvas, preset = null) {
     const w = 28, h = 28;
     const aug = document.createElement('canvas');
@@ -238,33 +238,30 @@
     aug.height = h;
     const ctx = aug.getContext('2d');
 
-    // 흰 배경
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, w, h);
 
-    // --- 파라미터 설정 ---
     const angleDeg = preset && typeof preset.angleDeg === 'number'
       ? preset.angleDeg
-      : (Math.random() - 0.5) * 40;   // -20° ~ +20°
+      : (Math.random() - 0.5) * 40;
     const angle = angleDeg * (Math.PI / 180);
 
     const scale = preset && typeof preset.scale === 'number'
       ? preset.scale
-      : 0.9 + Math.random() * 0.2;    // 0.9 ~ 1.1
+      : 0.9 + Math.random() * 0.2;
 
     const dx = preset && typeof preset.dx === 'number'
       ? preset.dx
-      : (Math.random() - 0.5) * 6;    // -3 ~ 3px
+      : (Math.random() - 0.5) * 6;
 
     const dy = preset && typeof preset.dy === 'number'
       ? preset.dy
-      : (Math.random() - 0.5) * 6;    // -3 ~ 3px
+      : (Math.random() - 0.5) * 6;
 
     const useNoise = preset && typeof preset.useNoise === 'boolean'
       ? preset.useNoise
-      : Math.random() < 0.7;          // 기본: 70% 확률로 노이즈
+      : Math.random() < 0.7;
 
-    // --- 기하 변환 ---
     ctx.save();
     ctx.translate(w / 2, h / 2);
     ctx.rotate(angle);
@@ -273,15 +270,14 @@
     ctx.drawImage(baseCanvas, -w / 2, -h / 2, w, h);
     ctx.restore();
 
-    // --- 노이즈 ---
     if (useNoise) {
       const imgData = ctx.getImageData(0, 0, w, h);
       const data = imgData.data;
       for (let i = 0; i < data.length; i += 4) {
         const noise = (Math.random() - 0.5) * 30;
-        data[i]   = Math.max(0, Math.min(255, data[i]   + noise)); // R
-        data[i+1] = Math.max(0, Math.min(255, data[i+1] + noise)); // G
-        data[i+2] = Math.max(0, Math.min(255, data[i+2] + noise)); // B
+        data[i]   = Math.max(0, Math.min(255, data[i]   + noise));
+        data[i+1] = Math.max(0, Math.min(255, data[i+1] + noise));
+        data[i+2] = Math.max(0, Math.min(255, data[i+2] + noise));
       }
       ctx.putImageData(imgData, 0, 0);
     }
@@ -297,7 +293,6 @@
     };
   }
 
-  // 데이터셋용 랜덤 증강 (기존 동작)
   function augment28x28(baseCanvas) {
     return applyAugmentation(baseCanvas, null);
   }
@@ -306,17 +301,12 @@
     setup() {
       const currentDigit = ref(0);
       const originalsCount = ref(0);
-      const originalSamples = ref([]);   // dataURL 배열
+      const originalSamples = ref([]);
 
-      // { geo: [{url, info}], noise: [{url, info}] }
-      const augmentedSamples = ref({
-        geo: [],
-        noise: []
-      });
+      const augmentedSamples = ref({ geo: [], noise: [] });
       const hasAugmentedSamples = computed(
-        () =>
-          augmentedSamples.value.geo.length > 0 ||
-          augmentedSamples.value.noise.length > 0
+        () => augmentedSamples.value.geo.length > 0 ||
+              augmentedSamples.value.noise.length > 0
       );
 
       const isWorking = ref(false);
@@ -335,26 +325,37 @@
       }
 
       function initCanvas() {
+        // 내부 해상도 설정 (논리 크기) – 여기서 칸 크기가 결정
+        canvas.width = 600;   // 10칸 → 칸당 60px
+        canvas.height = 300;  // 5칸 → 칸당 60px
+
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         drawGrid();
       }
 
       function drawGrid() {
+        const cellW = canvas.width / COLS;
+        const cellH = canvas.height / ROWS;
+
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = 2;
-        // 세로선 (칸 너비 30)
-        for (let x = 30; x < 300; x += 30) {
+
+        // 세로선
+        for (let c = 1; c < COLS; c++) {
+          const x = c * cellW;
           ctx.beginPath();
           ctx.moveTo(x, 0);
-          ctx.lineTo(x, 150);
+          ctx.lineTo(x, canvas.height);
           ctx.stroke();
         }
-        // 가로선 (칸 높이 30)
-        for (let y = 30; y < 150; y += 30) {
+
+        // 가로선
+        for (let r = 1; r < ROWS; r++) {
+          const y = r * cellH;
           ctx.beginPath();
           ctx.moveTo(0, y);
-          ctx.lineTo(300, y);
+          ctx.lineTo(canvas.width, y);
           ctx.stroke();
         }
       }
@@ -381,7 +382,7 @@
         e.preventDefault();
         const { x, y } = getCanvasPos(e);
         ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 4;
+        ctx.lineWidth = 4;   // 태블릿에서 적당한 두께
         ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(lastX, lastY);
@@ -397,17 +398,35 @@
       }
 
       function attachEvents() {
-        canvas.addEventListener("pointerdown", pointerDown);
-        canvas.addEventListener("pointermove", pointerMove);
-        window.addEventListener("pointerup", pointerUp);
+        const opts = { passive: false };
+
+        canvas.addEventListener("pointerdown", pointerDown, opts);
+        canvas.addEventListener("pointermove", pointerMove, opts);
+        canvas.addEventListener("pointerup", pointerUp, opts);
+        canvas.addEventListener("pointerleave", pointerUp, opts);
+        window.addEventListener("pointerup", pointerUp, opts);
+
+        // touch 이벤트 보조 (일부 브라우저 대비)
+        canvas.addEventListener("touchstart", (e) => {
+          pointerDown(e.touches[0]);
+          e.preventDefault();
+        }, opts);
+        canvas.addEventListener("touchmove", (e) => {
+          pointerMove(e.touches[0]);
+          e.preventDefault();
+        }, opts);
+        canvas.addEventListener("touchend", (e) => {
+          pointerUp(e.changedTouches[0]);
+          e.preventDefault();
+        }, opts);
       }
 
       function clearCanvas() {
-        initCanvas();
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        drawGrid();
       }
 
-      // 현재 캔버스(300x150)를 10x5 → 28x28로 잘라서 저장
-      // 이때 28x28 가장자리 1픽셀 테두리는 흰색으로 덮어서 그리드 선 제거
       function sliceTo28x28() {
         const temp = document.createElement("canvas");
         temp.width = 28;
@@ -419,28 +438,27 @@
         originalSamples.value = [];
         augmentedSamples.value = { geo: [], noise: [] };
 
-        const totalCells = 50; // 10 x 5
-        for (let i = 0; i < totalCells; i++) {
-          const col = i % 10;
-          const row = Math.floor(i / 10);
-          const sx = col * 30;
-          const sy = row * 30;
+        const cellW = canvas.width / COLS;
+        const cellH = canvas.height / ROWS;
 
-          // 28x28로 리샘플링
+        const totalCells = COLS * ROWS;
+        for (let i = 0; i < totalCells; i++) {
+          const col = i % COLS;
+          const row = Math.floor(i / COLS);
+          const sx = col * cellW;
+          const sy = row * cellH;
+
           tctx.fillStyle = "#ffffff";
           tctx.fillRect(0, 0, 28, 28);
-          tctx.drawImage(canvas, sx, sy, 30, 30, 0, 0, 28, 28);
+          tctx.drawImage(canvas, sx, sy, cellW, cellH, 0, 0, 28, 28);
 
-          // --- 가장자리 1픽셀 테두리 흰색으로 덮어서 선 제거 ---
+          // 가장자리 1픽셀 테두리 흰색으로 덮어서 그리드 선 제거
           tctx.fillStyle = "#ffffff";
-          // 위/아래
           tctx.fillRect(0, 0, 28, 1);
           tctx.fillRect(0, 27, 28, 1);
-          // 왼쪽/오른쪽
           tctx.fillRect(0, 0, 1, 28);
           tctx.fillRect(27, 0, 1, 28);
 
-          // 복제 캔버스에 저장
           const clone = document.createElement("canvas");
           clone.width = 28;
           clone.height = 28;
@@ -458,7 +476,6 @@
         alert(`숫자 ${currentDigit.value}의 28×28 원본 ${store.originals.length}장을 메모리에 저장했습니다.`);
       }
 
-      // 현재 숫자 데이터 초기화
       function resetDigitData() {
         if (!confirm(`숫자 ${currentDigit.value}의 저장된 이미지를 모두 지울까요?`)) return;
         digitStore[currentDigit.value].originals = [];
@@ -467,8 +484,6 @@
         augmentedSamples.value = { geo: [], noise: [] };
       }
 
-      // ZIP 생성 및 다운로드 (데이터셋용)
-      // + 기하 변환 5개, 노이즈 5개 샘플 표시
       async function generateAndDownload() {
         const digit = currentDigit.value;
         const store = digitStore[digit];
@@ -482,13 +497,13 @@
         isWorking.value = true;
         augmentedSamples.value = { geo: [], noise: [] };
 
-        const TOTAL = 1000; // 최종 개수
+        const TOTAL = 1000;
         const needAug = Math.max(0, TOTAL - originals.length);
 
         const zip = new JSZip();
         const folder = zip.folder(`digit_${digit}`);
 
-        // 1) 원본 저장 (img_digit_001 ~ img_digit_050)
+        // 원본 저장
         originals.forEach((c, idx) => {
           const fileIndex = idx + 1;
           const filename = `img_${digit}_${String(fileIndex).padStart(3, "0")}.jpg`;
@@ -500,16 +515,14 @@
         const geoSamples = [];
         const noiseSamples = [];
 
-        // 2) 증강 이미지 생성
+        // 증강 생성
         for (let i = 0; i < needAug; i++) {
           const base = originals[Math.floor(Math.random() * originals.length)];
 
           let preset = null;
           let sampleCategory = null;
 
-          // 앞쪽 10개는 샘플용으로 만든다: 기하 5개, 노이즈 5개
           if (geoSamples.length < 5) {
-            // 기하 변환 (회전/이동/크기)만, 노이즈 OFF
             preset = {
               angleDeg: (Math.random() - 0.5) * 40,
               dx: (Math.random() - 0.5) * 6,
@@ -519,7 +532,6 @@
             };
             sampleCategory = "geo";
           } else if (noiseSamples.length < 5) {
-            // 노이즈 중심: 위치/크기 고정, 노이즈 ON
             preset = {
               angleDeg: 0,
               dx: 0,
@@ -529,7 +541,6 @@
             };
             sampleCategory = "noise";
           } else {
-            // 나머지는 완전 랜덤 증강
             preset = null;
             sampleCategory = null;
           }
@@ -548,10 +559,7 @@
           }
         }
 
-        augmentedSamples.value = {
-          geo: geoSamples,
-          noise: noiseSamples
-        };
+        augmentedSamples.value = { geo: geoSamples, noise: noiseSamples };
 
         const blob = await zip.generateAsync({ type: "blob" });
         saveAs(blob, `digit_${digit}_1000_images.zip`);
