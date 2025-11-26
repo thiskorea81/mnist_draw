@@ -4,6 +4,8 @@
 
 Vue.js CDN + 순수 HTML/JS만으로 구성되어 있어서, **파일 하나만 열면 바로 사용**할 수 있습니다.
 
+https://mnistdraw.netlify.app/
+
 ---
 
 ## 1. 주요 기능
