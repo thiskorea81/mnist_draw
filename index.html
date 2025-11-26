@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>MNIST 손글씨 수집 도구 (반응형 + 지우개)</title>
+  <title>MNIST 손글씨 수집 도구 (반응형 + 지우개 + 원본 ZIP)</title>
 
   <!-- Vue 3 CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -84,15 +84,12 @@
     canvas {
       border: 1px solid #ddd;
       background: #fff;
-      /* 내부 해상도는 고정(600x300), 화면에 보이는 크기는 반응형 */
       width: 100%;
       max-width: 900px;
       height: auto;
       aspect-ratio: 2 / 1;
       image-rendering: pixelated;
       border-radius: 8px;
-
-      /* 태블릿에서 스크롤/줌 제스처를 막고 그리기 인식 */
       touch-action: none;
     }
     .hint {
@@ -109,7 +106,7 @@
       margin-top: 16px;
     }
     .samples img {
-      width: 56px; /* 28x28 두 배 정도 */
+      width: 56px;
       height: 56px;
       border: 1px solid #ddd;
       border-radius: 4px;
@@ -125,7 +122,7 @@
 </head>
 <body>
 <div id="app">
-  <h1>MNIST 스타일 손글씨 수집 (반응형 Canvas + 지우개)</h1>
+  <h1>MNIST 스타일 손글씨 수집 (반응형 Canvas + 지우개 + 원본 ZIP)</h1>
 
   <div class="toolbar">
     <div><strong>현재 숫자:</strong></div>
@@ -165,12 +162,21 @@
       50칸 → 28×28 원본 50장 저장
     </button>
 
+    <!-- 새 버튼: 원본만 ZIP 다운로드 -->
+    <button
+      class="action secondary"
+      :disabled="originalsCount < 1 || isWorking"
+      @click="downloadOriginals"
+    >
+      원본 28×28 ZIP 다운로드
+    </button>
+
     <button
       class="action"
       :disabled="originalsCount < 50 || isWorking"
       @click="generateAndDownload"
     >
-      (원본+변환) 1000장 생성 & ZIP 다운로드
+      (원본+변환) 1000장 생성 & ZIP
     </button>
 
     <button class="action danger" @click="resetDigitData">
@@ -181,18 +187,18 @@
   <div class="status">
     선택 숫자: <strong>{{ currentDigit }}</strong> /
     저장된 원본(28×28): <strong>{{ originalsCount }}</strong> 장
-    <span v-if="isWorking"> &nbsp;⏳ 이미지 생성/압축 중...</span>
+    <span v-if="isWorking"> &nbsp;⏳ 작업 중...</span>
   </div>
 
   <div class="canvas-wrapper">
     <canvas id="drawCanvas"></canvas>
     <div class="hint">
-      - 내부 해상도는 600×300이며, 10×5칸(총 50칸)으로 나뉩니다. 칸 크기는 화면 크기에 맞게 비율로 조절됩니다.<br>
-      - <b>펜/지우개</b> 버튼으로 도구를 바꿀 수 있고, 지우개는 흰색 굵은 선으로 부분 삭제합니다.<br>
-      - 각 칸에 같은 숫자를 50번 쓰고, <b>“50칸 → 28×28 원본 50장 저장”</b> 버튼을 누르면<br>
-        28×28 이미지가 50장 메모리에 저장됩니다(가장자리 1픽셀 테두리는 흰색으로 처리).<br>
-      - <b>“1000장 생성 & ZIP 다운로드”</b> 버튼을 누르면 원본 + 증강 합계 1000장을 ZIP으로 받고,<br>
-        아래에 <b>기하 변환 5개 + 노이즈 중심 5개</b> 샘플이 표시됩니다.
+      - 내부 해상도는 600×300, 10×5칸(총 50칸)으로 나뉘고, 화면 크기에 맞게 비율로 확대/축소됩니다.<br>
+      - <b>펜/지우개</b>로 부분 수정이 가능하고, 지우개는 흰색 굵은 선입니다.<br>
+      - <b>“50칸 → 28×28 원본 50장 저장”</b> 버튼으로 메모리에 원본 28×28 이미지가 저장됩니다.<br>
+      - <b>“원본 28×28 ZIP 다운로드”</b>로 현재 숫자의 원본만 압축 파일로 받을 수 있습니다.<br>
+      - <b>“(원본+변환) 1000장 생성 & ZIP”</b>은 원본 + 증강 이미지를 합쳐 1000장을 생성하고,<br>
+        아래에 <b>기하 변환 5개 + 노이즈 중심 5개</b> 샘플을 보여줍니다.
     </div>
   </div>
 
@@ -312,10 +318,6 @@
     };
   }
 
-  function augment28x28(baseCanvas) {
-    return applyAugmentation(baseCanvas, null);
-  }
-
   createApp({
     setup() {
       const currentDigit = ref(0);
@@ -349,7 +351,10 @@
       }
 
       function initCanvas() {
-        canvas.width = 600;   // 내부 논리 해상도
+        canvas = document.getElementById("drawCanvas");
+        ctx = canvas.getContext("2d");
+
+        canvas.width = 600;
         canvas.height = 300;
 
         ctx.fillStyle = "#ffffff";
@@ -405,9 +410,9 @@
         if (toolMode.value === 'pen') {
           ctx.strokeStyle = "#000000";
           ctx.lineWidth = 4;
-        } else { // eraser
+        } else {
           ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 12; // 지우개는 좀 더 굵게
+          ctx.lineWidth = 12;
         }
 
         ctx.lineCap = "round";
@@ -433,7 +438,6 @@
         canvas.addEventListener("pointerleave", pointerUp, opts);
         window.addEventListener("pointerup", pointerUp, opts);
 
-        // touch 이벤트 보조 (일부 브라우저 대비)
         canvas.addEventListener("touchstart", (e) => {
           pointerDown(e.touches[0]);
           e.preventDefault();
@@ -511,10 +515,38 @@
         augmentedSamples.value = { geo: [], noise: [] };
       }
 
+      // 새 기능: 원본만 ZIP으로 다운로드
+      async function downloadOriginals() {
+        const digit = currentDigit.value;
+        const originals = digitStore[digit].originals;
+        if (!originals || originals.length === 0) {
+          alert("먼저 50칸을 채우고 '50칸 → 28×28 원본 50장 저장'을 눌러주세요.");
+          return;
+        }
+
+        isWorking.value = true;
+        const zip = new JSZip();
+        const folder = zip.folder(`digit_${digit}_originals`);
+
+        originals.forEach((c, idx) => {
+          const fileIndex = idx + 1;
+          const filename = `img_${digit}_${String(fileIndex).padStart(3, "0")}.jpg`;
+          const dataUrl = c.toDataURL("image/jpeg", 0.9);
+          const base64 = dataUrl.split(",")[1];
+          folder.file(filename, base64, { base64: true });
+        });
+
+        const blob = await zip.generateAsync({ type: "blob" });
+        const countStr = String(originals.length).padStart(3, "0");
+        saveAs(blob, `digit_${digit}_originals_${countStr}.zip`);
+        isWorking.value = false;
+        alert(`숫자 ${digit}의 원본 28×28 이미지 ${originals.length}장을 ZIP으로 저장했습니다.`);
+      }
+
+      // 원본 + 증강 1000장 ZIP
       async function generateAndDownload() {
         const digit = currentDigit.value;
-        const store = digitStore[digit];
-        const originals = store.originals;
+        const originals = digitStore[digit].originals;
 
         if (!originals || originals.length < 1) {
           alert("먼저 50칸을 채우고 '50칸 → 28×28 원본 50장 저장'을 눌러주세요.");
@@ -595,8 +627,6 @@
       }
 
       onMounted(() => {
-        canvas = document.getElementById("drawCanvas");
-        ctx = canvas.getContext("2d");
         initCanvas();
         attachEvents();
       });
@@ -613,8 +643,9 @@
         setTool,
         clearCanvas,
         sliceTo28x28,
-        generateAndDownload,
-        resetDigitData
+        resetDigitData,
+        downloadOriginals,
+        generateAndDownload
       };
     }
   }).mount("#app");
