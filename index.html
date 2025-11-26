@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
-  <title>MNIST 손글씨 수집 도구 (반응형)</title>
+  <title>MNIST 손글씨 수집 도구 (반응형 + 지우개)</title>
 
   <!-- Vue 3 CDN -->
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
@@ -41,7 +41,7 @@
       gap: 4px;
       flex-wrap: wrap;
     }
-    .digit-btn {
+    .digit-btn, .tool-btn {
       padding: 6px 10px;
       border-radius: 6px;
       border: 1px solid #ccc;
@@ -49,7 +49,8 @@
       cursor: pointer;
       font-size: 14px;
     }
-    .digit-btn.active {
+    .digit-btn.active,
+    .tool-btn.active {
       background: #2563eb;
       color: #fff;
       border-color: #2563eb;
@@ -124,7 +125,7 @@
 </head>
 <body>
 <div id="app">
-  <h1>MNIST 스타일 손글씨 수집 (반응형 Canvas)</h1>
+  <h1>MNIST 스타일 손글씨 수집 (반응형 Canvas + 지우개)</h1>
 
   <div class="toolbar">
     <div><strong>현재 숫자:</strong></div>
@@ -137,6 +138,24 @@
         @click="setDigit(d-1)"
       >
         {{ d-1 }}
+      </button>
+    </div>
+
+    <div style="display:flex; gap:4px; align-items:center;">
+      <span style="font-size:13px; color:#374151;">도구:</span>
+      <button
+        class="tool-btn"
+        :class="{ active: toolMode === 'pen' }"
+        @click="setTool('pen')"
+      >
+        펜
+      </button>
+      <button
+        class="tool-btn"
+        :class="{ active: toolMode === 'eraser' }"
+        @click="setTool('eraser')"
+      >
+        지우개
       </button>
     </div>
 
@@ -168,8 +187,8 @@
   <div class="canvas-wrapper">
     <canvas id="drawCanvas"></canvas>
     <div class="hint">
-      - 내부 해상도는 600×300이며, 10×5칸(총 50칸)으로 나뉩니다.<br>
-      - 화면에서는 기기 가로폭에 맞춰 자동으로 확대/축소됩니다(칸 크기 자동 조절).<br>
+      - 내부 해상도는 600×300이며, 10×5칸(총 50칸)으로 나뉩니다. 칸 크기는 화면 크기에 맞게 비율로 조절됩니다.<br>
+      - <b>펜/지우개</b> 버튼으로 도구를 바꿀 수 있고, 지우개는 흰색 굵은 선으로 부분 삭제합니다.<br>
       - 각 칸에 같은 숫자를 50번 쓰고, <b>“50칸 → 28×28 원본 50장 저장”</b> 버튼을 누르면<br>
         28×28 이미지가 50장 메모리에 저장됩니다(가장자리 1픽셀 테두리는 흰색으로 처리).<br>
       - <b>“1000장 생성 & ZIP 다운로드”</b> 버튼을 누르면 원본 + 증강 합계 1000장을 ZIP으로 받고,<br>
@@ -310,6 +329,7 @@
       );
 
       const isWorking = ref(false);
+      const toolMode = ref('pen'); // 'pen' or 'eraser'
 
       let canvas, ctx;
       let drawing = false;
@@ -324,10 +344,13 @@
         augmentedSamples.value = { geo: [], noise: [] };
       }
 
+      function setTool(mode) {
+        toolMode.value = mode;
+      }
+
       function initCanvas() {
-        // 내부 해상도 설정 (논리 크기) – 여기서 칸 크기가 결정
-        canvas.width = 600;   // 10칸 → 칸당 60px
-        canvas.height = 300;  // 5칸 → 칸당 60px
+        canvas.width = 600;   // 내부 논리 해상도
+        canvas.height = 300;
 
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -341,7 +364,6 @@
         ctx.strokeStyle = "#000000";
         ctx.lineWidth = 2;
 
-        // 세로선
         for (let c = 1; c < COLS; c++) {
           const x = c * cellW;
           ctx.beginPath();
@@ -349,8 +371,6 @@
           ctx.lineTo(x, canvas.height);
           ctx.stroke();
         }
-
-        // 가로선
         for (let r = 1; r < ROWS; r++) {
           const y = r * cellH;
           ctx.beginPath();
@@ -381,8 +401,15 @@
         if (!drawing) return;
         e.preventDefault();
         const { x, y } = getCanvasPos(e);
-        ctx.strokeStyle = "#000000";
-        ctx.lineWidth = 4;   // 태블릿에서 적당한 두께
+
+        if (toolMode.value === 'pen') {
+          ctx.strokeStyle = "#000000";
+          ctx.lineWidth = 4;
+        } else { // eraser
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 12; // 지우개는 좀 더 굵게
+        }
+
         ctx.lineCap = "round";
         ctx.beginPath();
         ctx.moveTo(lastX, lastY);
@@ -581,7 +608,9 @@
         augmentedSamples,
         hasAugmentedSamples,
         isWorking,
+        toolMode,
         setDigit,
+        setTool,
         clearCanvas,
         sliceTo28x28,
         generateAndDownload,
